@@ -1,0 +1,57 @@
+{
+  "name": "flutter-l10n-helper",
+  "displayName": "Flutter L10n Helper",
+  "description": "Display localized text in code for Flutter ARB files",
+  "version": "0.1.0",
+  "publisher": "oke",
+  "engines": {
+    "vscode": "^1.60.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onLanguage:dart"
+  ],
+  "main": "./l10n_helper.js",
+  "readme": "README.md",
+  "readmeFilename": "README.md",
+  "repository": {
+    "type": "git",
+    "url": ""
+  },
+  "markdown": "github",
+  "qna": "marketplace",
+  "contributes": {
+    "commands": [
+      {
+        "command": "l10nHelper.toggle",
+        "title": "Toggle L10n Helper"
+      },
+      {
+        "command": "l10nHelper.reload",
+        "title": "Reload L10n ARB Files"
+      }
+    ],
+    "configuration": {
+      "title": "Flutter L10n Helper",
+      "properties": {
+        "l10nHelper.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable or disable the L10n Helper"
+        },
+        "l10nHelper.arbPath": {
+          "type": "string",
+          "default": "assets/strings",
+          "description": "Path to the ARB files relative to the workspace root"
+        },
+        "l10nHelper.preferredLocale": {
+          "type": "string",
+          "default": "ja",
+          "description": "Preferred locale to display in the code"
+        }
+      }
+    }
+  }
+}
