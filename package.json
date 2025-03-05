@@ -50,6 +50,37 @@
           "type": "string",
           "default": "ja",
           "description": "Preferred locale to display in the code"
+        },
+        "l10nHelper.maxTextLength": {
+          "type": "number",
+          "default": 20,
+          "description": "Maximum length of displayed text before truncating with ellipsis"
+        },
+        "l10nHelper.customPatterns": {
+          "type": "array",
+          "default": [],
+          "description": "Custom regex patterns to match l10n keys in code. Each pattern should have 'pattern' and 'type' properties.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "pattern": {
+                "type": "string",
+                "description": "Regex pattern string to match l10n keys. Must include a capture group for the key."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "firstGroup",
+                  "secondGroup"
+                ],
+                "description": "Which capture group contains the l10n key. 'firstGroup' means the first capture group is the key, 'secondGroup' means the second capture group is the key."
+              }
+            },
+            "required": [
+              "pattern",
+              "type"
+            ]
+          }
         }
       }
     }

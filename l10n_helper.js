@@ -6,42 +6,41 @@ const fs = require("fs");
 const path = require("path");
 
 let arbCache = {};
-let decorationTypes = {};
-let documentVersion = 0; // ドキュメントのバージョンを追跡
 let timeout = null;
-const DECORATION_TYPE = "l10nHelper";
-const MAX_TEXT_LENGTH = 20; // 表示するテキストの最大長
+const DEFAULT_MAX_TEXT_LENGTH = 20; // デフォルトの最大テキスト長
 // 一つの装飾タイプを使い回す
 let singleDecorationType = null;
 
-// 正規表現パターンを一度だけ定義
-const l10nPatterns = [
-  { pattern: /context\.l10n\.([a-zA-Z0-9_]+)/g, type: "normal" },
-  { pattern: /(?<!\w)l10n\.([a-zA-Z0-9_]+)/g, type: "normal" },
-  {
-    pattern: /(\w+)\s*:\s*(?:context\.)?l10n\.([a-zA-Z0-9_]+)/g,
-    type: "label"
-  },
-  {
-    pattern: /L10n\.of\(\s*(\w+)\s*\)!\.([a-zA-Z0-9_]+)/g,
-    type: "normal"
-  },
-  {
-    pattern: /L10n\.of\(\s*(\w+)\s*\)\?\.([a-zA-Z0-9_]+)/g,
-    type: "normal"
-  },
-  {
-    pattern: /(\w+)\s*:\s*L10n\.of\(\s*\w+\s*\)!\.([a-zA-Z0-9_]+)/g,
-    type: "label"
-  },
-  {
-    pattern: /(\w+)\s*:\s*L10n\.of\(\s*\w+\s*\)\?\.([a-zA-Z0-9_]+)/g,
-    type: "label"
-  }
-];
-
 // 現在のドキュメントの装飾を保持
 let currentDecorations = [];
+
+/**
+ * 設定から正規表現パターンを取得する
+ * @returns {Array} 正規表現パターンの配列
+ */
+function getL10nPatterns() {
+  const config = vscode.workspace.getConfiguration("l10nHelper");
+  const customPatterns = config.get("customPatterns") || [];
+
+  // カスタムパターンを正規表現オブジェクトに変換
+  const patterns = [];
+
+  try {
+    for (const patternObj of customPatterns) {
+      if (patternObj.pattern && patternObj.type) {
+        patterns.push({
+          pattern: new RegExp(patternObj.pattern, "g"),
+          type: patternObj.type
+        });
+      }
+    }
+
+    return patterns;
+  } catch (error) {
+    console.error("Error parsing custom patterns:", error);
+    return [];
+  }
+}
 
 /**
  * Activate the extension
@@ -267,10 +266,13 @@ function loadArbFiles() {
  * @returns {string} 省略されたテキスト
  */
 function truncateText(text) {
-  if (text.length <= MAX_TEXT_LENGTH) {
+  const config = vscode.workspace.getConfiguration("l10nHelper");
+  const maxTextLength = config.get("maxTextLength") || DEFAULT_MAX_TEXT_LENGTH;
+
+  if (text.length <= maxTextLength) {
     return text;
   }
-  return text.substring(0, MAX_TEXT_LENGTH) + "...";
+  return text.substring(0, maxTextLength) + "...";
 }
 
 /**
@@ -373,6 +375,8 @@ function updateDecorations(partialUpdate = false, contentChanges = []) {
  */
 function processLines(editor, startLine, endLine) {
   const decorations = [];
+  // 設定から正規表現パターンを取得
+  const l10nPatterns = getL10nPatterns();
 
   // 各行ごとに処理
   for (let lineIndex = startLine; lineIndex < endLine; lineIndex++) {
@@ -393,15 +397,18 @@ function processLines(editor, startLine, endLine) {
 
         let match;
         while ((match = pattern.exec(lineText)) !== null) {
-          if (type === "label") {
-            // ラベル形式の場合は2番目のキャプチャグループがキー
+          if (type === "secondGroup") {
+            // 2番目のキャプチャグループがキー
             matches.push({
               key: match[2],
               index: match.index,
               length: match[0].length,
               type: type
             });
-          } else if (pattern.toString().includes("L10n.of")) {
+          } else if (
+            pattern.toString().includes("L10n.of") &&
+            type === "firstGroup"
+          ) {
             // L10n.of形式の場合は2番目のキャプチャグループがキー
             matches.push({
               key: match[2],
