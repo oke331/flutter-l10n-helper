@@ -1,167 +1,169 @@
 # Flutter L10n Helper
 
-Flutter コードでローカライズされたテキストをインラインで表示するための VSCode 拡張機能です。
+VS Code extension for displaying localized text inline in Flutter code. This extension specifically supports Flutter's ARB (Application Resource Bundle) files only.
 
-## 機能
+![samplePng](images/sample.png)
 
-- コード内の l10n キーの横に ARB ファイルから実際のローカライズされたテキストを表示
-- カスタム正規表現パターンによる柔軟なマッチング
-- コードの右側に斜体で翻訳を表示
-- 長い翻訳を省略記号で切り詰め（文字数は設定可能）
+## Features
 
+- Shows actual localized text from ARB files next to l10n keys in your code
+- Supports flexible matching with custom regex patterns
+- Displays translations in italics at the end of the code line
+- Truncates long translations with ellipsis (configurable character limit)
 
-## インストール方法
+## Installation
 
-### VSIX からインストール
+1. Open VS Code
+2. Go to Extensions view (Ctrl+Shift+X / Cmd+Shift+X)
+3. Search for "Flutter L10n Helper"
+4. Click "Install"
 
-1. `flutter-l10n-helper.vsix` ファイルをダウンロード
-1. VSCode で拡張機能ビュー（Ctrl+Shift+X）を開く
-1. 拡張機能ビューの右上にある「...」メニューをクリック ※VSCodeのActivityBarが上にあると表示されない可能性があります
-1. 「VSIX からインストール...」を選択し、ダウンロードしたファイルを選択
+## Configuration
 
-## 設定
+You can configure the extension through VS Code settings:
 
-以下の設定を VSCode の settings.json に追加してください。
-※ 適宜ご自身の環境に合わせて設定を修正してください。
+1. Go to File > Preferences > Settings (or Code > Preferences > Settings on macOS)
+2. Search for "Flutter L10n Helper"
+3. Adjust the settings as needed
+
+### Minimal Configuration
+
+For most projects, the minimal configuration in your `settings.json` would be:
 
 ```json
 {
-  "l10nHelper.enabled": true,
-  "l10nHelper.arbPath": "assets/strings",
-  "l10nHelper.preferredLocale": "ja",
-  "l10nHelper.maxTextLength": 20,
-  "l10nHelper.customPatterns": [
-    { "pattern": "context\\.l10n\\.([a-zA-Z0-9_]+)", "type": "firstGroup" },
-    { "pattern": "(?<!\\w)l10n\\.([a-zA-Z0-9_]+)", "type": "firstGroup" },
-    { "pattern": "(\\w+)\\s*:\\s*(?:context\\.)?l10n\\.([a-zA-Z0-9_]+)", "type": "secondGroup" },
-    { "pattern": "L10n\\.of\\(\\s*(\\w+)\\s*\\)!\\.([a-zA-Z0-9_]+)", "type": "secondGroup" },
-    { "pattern": "L10n\\.of\\(\\s*(\\w+)\\s*\\)\\?\\.([a-zA-Z0-9_]+)", "type": "secondGroup" },
-    { "pattern": "(\\w+)\\s*:\\s*L10n\\.of\\(\\s*\\w+\\s*\\)!\\.([a-zA-Z0-9_]+)", "type": "secondGroup" },
-    { "pattern": "(\\w+)\\s*:\\s*L10n\\.of\\(\\s*\\w+\\s*\\)\\?\\.([a-zA-Z0-9_]+)", "type": "secondGroup" }
+  "flutterL10nHelper.arbPath": "lib/l10n",
+  "flutterL10nHelper.preferredLocale": "ja"
+}
+```
+
+This will use all the default patterns and standard settings.
+
+### Full Configuration
+
+For complete customization, you can use the full configuration:
+
+```json
+{
+  "flutterL10nHelper.arbPath": "lib/l10n",
+  "flutterL10nHelper.preferredLocale": "ja",
+  "flutterL10nHelper.maxTextLength": 20,
+  "flutterL10nHelper.useDefaultPatterns": true,
+  "flutterL10nHelper.customPatterns": [
+    { "pattern": "customL10n\\.([a-zA-Z0-9_]+)", "captureGroup": 1 },
+    { "pattern": "myTranslation\\.([a-zA-Z0-9_]+)", "captureGroup": 1 }
   ]
 }
 ```
 
-> **注意**: settings.jsonでは、バックスラッシュ（`\`）を2重にエスケープする必要があります。上記の例では、すでに正しくエスケープされています。例えば、`.` は `\\.` と記述します。
+> **Note**: In `settings.json`, backslashes (`\`) must be double-escaped. The examples above already have the correct escaping. For example, `.` is written as `\\.`.
 
-- `l10nHelper.enabled`: 拡張機能の有効/無効を切り替え
-- `l10nHelper.arbPath`: ワークスペースのルートからの ARB ファイルへのパス
-- `l10nHelper.preferredLocale`: 表示する優先ロケール（例：日本語の場合は "ja"）
-- `l10nHelper.maxTextLength`: 表示するテキストの最大長（この長さを超えると「...」で省略されます）
-- `l10nHelper.customPatterns`: 正規表現パターンの配列（**必須**）
+### Settings Explained
 
-### 正規表現パターン
+- `flutterL10nHelper.arbPath`: Path to ARB files relative to workspace root
+- `flutterL10nHelper.preferredLocale`: Preferred locale to display (e.g., "ja" for Japanese)
+- `flutterL10nHelper.maxTextLength`: Maximum length of displayed text (longer text will be truncated with "...")
+- `flutterL10nHelper.useDefaultPatterns`: Whether to use the built-in default patterns (set to `false` to use only custom patterns)
+- `flutterL10nHelper.customPatterns`: Array of regex patterns (optional if using default patterns)
 
-この拡張機能では、l10n キーを検出するために正規表現パターンを使用します。上記の設定例には、一般的な Flutter の l10n パターンが含まれています。プロジェクト固有のパターンがある場合は、これらのパターンを修正したり、新しいパターンを追加したりすることができます。
+### Default Patterns
 
-各パターンには以下のプロパティが必要です：
+The extension includes the following default patterns when `useDefaultPatterns` is enabled (default):
 
-- `pattern`: 正規表現パターン文字列。キーをキャプチャするためのグループ（括弧で囲まれた部分）を含める必要があります。
-- `type`: キャプチャグループのどの部分がl10nキーなのかを指定します。
-  - `firstGroup`: 最初のキャプチャグループ（1番目の括弧）がl10nキー
-  - `secondGroup`: 2番目のキャプチャグループ（2番目の括弧）がl10nキー
+```javascript
+// 1. AppLocalizations.of(context)?.helloWorld (most common pattern)
+{ "pattern": "AppLocalizations\\.of\\(\\s*\\w+\\s*\\)\\?\\.(\\w+)" }
+// Example: Text(AppLocalizations.of(context)?.welcome_message) // Displays: Welcome to our app
 
-#### 正規表現パターンと対応するコード例
+// 2. AppLocalizations.of(context)!.helloWorld
+{ "pattern": "AppLocalizations\\.of\\(\\s*\\w+\\s*\\)!\\.(\\w+)" }
+// Example: Text(AppLocalizations.of(context)!.header_title) // Displays: Dashboard
 
-以下に、各パターンとそれに対応するDartコードの例を示します：
+// 3. appLocalizations.helloWorld
+{ "pattern": "appLocalizations\\.(\\w+)" }
+// Example: Text(appLocalizations.submit_button) // Displays: Submit
 
-1. `context\\.l10n\\.([a-zA-Z0-9_]+)` - `firstGroup`
-   ```dart
-   Text(context.l10n.hello_world)  // hello_worldがキー
-   ```
+// 4. context.l10n.hello_world
+{ "pattern": "context\\.l10n\\.([a-zA-Z0-9_]+)" }
+// Example: Text(context.l10n.cancel_action) // Displays: Cancel
 
-2. `(?<!\\w)l10n\\.([a-zA-Z0-9_]+)` - `firstGroup`
-   ```dart
-   Text(l10n.welcome_message)  // welcome_messageがキー
-   ```
+// 5. l10n.welcome_message
+{ "pattern": "(?<!\\w)l10n\\.([a-zA-Z0-9_]+)" }
+// Example: Text(l10n.welcome_message) // Displays: Welcome to our app
 
-3. `(\\w+)\\s*:\\s*(?:context\\.)?l10n\\.([a-zA-Z0-9_]+)` - `secondGroup`
-   ```dart
-   label: context.l10n.submit_button  // submit_buttonがキー
-   ```
+// 6. L10n.of(context)!.cancel_button
+{ "pattern": "L10n\\.of\\(\\s*\\w+\\s*\\)!\\.([a-zA-Z0-9_]+)" }
+// Example: Text(L10n.of(context)!.cancel_button) // Displays: Cancel
 
-4. `L10n\\.of\\(\\s*(\\w+)\\s*\\)!\\.([a-zA-Z0-9_]+)` - `secondGroup`
-   ```dart
-   Text(L10n.of(context)!.cancel_button)  // cancel_buttonがキー
-   ```
+// 7. L10n.of(context)?.ok_button
+{ "pattern": "L10n\\.of\\(\\s*\\w+\\s*\\)\\?\\.([a-zA-Z0-9_]+)" }
+// Example: Text(L10n.of(context)?.ok_button) // Displays: OK
+```
 
-5. `L10n\\.of\\(\\s*(\\w+)\\s*\\)\\?\\.([a-zA-Z0-9_]+)` - `secondGroup`
-   ```dart
-   Text(L10n.of(context)?.ok_button)  // ok_buttonがキー
-   ```
+These patterns have the global flag enabled and use properly escaped regular expressions in the actual implementation.
 
-6. `(\\w+)\\s*:\\s*L10n\\.of\\(\\s*\\w+\\s*\\)!\\.([a-zA-Z0-9_]+)` - `secondGroup`
-   ```dart
-   title: L10n.of(context)!.page_title  // page_titleがキー
-   ```
+### Custom Regex Patterns
 
-7. `(\\w+)\\s*:\\s*L10n\\.of\\(\\s*\\w+\\s*\\)\\?\\.([a-zA-Z0-9_]+)` - `secondGroup`
-   ```dart
-   hint: L10n.of(context)?.input_hint  // input_hintがキー
-   ```
+The extension uses regex patterns to detect l10n keys. You can add custom patterns if your project uses specific patterns not covered by the defaults.
 
-**注意**: 
-- `l10nHelper.customPatterns` の設定は必須です。設定されていない場合、拡張機能は l10n キーを検出できません。
-- 高度な正規表現機能（否定先読み/後読みなど）を使用する場合は、VSCodeの正規表現エンジンがそれらをサポートしていることを確認してください。
+Each pattern requires:
 
-## コマンド
+- `pattern`: Regex pattern string with capture groups to identify the l10n key
+- `captureGroup`: (Optional) Which capture group contains the l10n key (1 for first group, 2 for second, etc.). Defaults to 1 if not specified.
 
-- `L10n Helper: Toggle`: 翻訳の表示を切り替え
-- `L10n Helper: Reload ARB Files`: ARB ファイルが変更された場合に再読み込み
+#### Example Custom Pattern
 
-## 動作の仕組み
+Here's an example of a custom pattern for a custom localization setup:
 
-この拡張機能はプロジェクトから ARB ファイルを読み込み、コード内の l10n キーの上にコメントとして翻訳を表示します。これにより、ARB ファイルでキーを調べることなく、ローカライズされたテキストが何であるかを簡単に理解できます。
+```json
+"flutterL10nHelper.customPatterns": [
+  { "pattern": "customTranslator\\.get\\('([^']+)'\\)" }
+]
+```
 
-例えば、以下のようなコードがある場合：
+This would match code like: `customTranslator.get('my_key')` and use the first capture group by default.
+
+If you need to specify a different capture group:
+
+```json
+"flutterL10nHelper.customPatterns": [
+  { "pattern": "myTranslator\\.get\\(([0-9]+), '([^']+)'\\)", "captureGroup": 2 }
+]
+```
+
+This would match code like: `myTranslator.get(123, 'my_key')` and use the second capture group.
+
+## Commands
+
+- `Flutter L10n Helper: Reload ARB Files`: Reload ARB files when they've been changed
+
+## How It Works
+
+The extension reads ARB files from your project and displays translations as comments next to l10n keys in your code. This lets you understand what the localized text is without having to look up the keys in ARB files.
+
+For example, with this code:
 
 ```dart
-Text(context.l10n.ok_button)
+Text(AppLocalizations.of(context)?.ok_button)
 ```
 
-次のように表示されます：
+It will display:
 
 ```dart
-Text(context.l10n.ok_button) OK
+Text(AppLocalizations.of(context)?.ok_button) OK
 ```
 
-長い翻訳は切り詰められます（`l10nHelper.maxTextLength` で指定した文字数を超える場合）：
+Long translations will be truncated (if they exceed the length specified in `flutterL10nHelper.maxTextLength`):
 
 ```dart
-Text(context.l10n.very_long_text) とても長いテキストは...
+Text(AppLocalizations.of(context)?.very_long_text) This is a very long...
 ```
 
-## トラブルシューティング
+## Troubleshooting
 
-翻訳が表示されない場合：
+If translations don't appear:
 
-1. 拡張機能が有効になっていることを確認（`l10nHelper.enabled` が `true` に設定されている）
-2. ARB パスが正しいことを確認（`l10nHelper.arbPath`）
-3. 優先ロケールが ARB ファイルに存在することを確認
-4. `l10nHelper.customPatterns` が正しく設定されていることを確認
-5. `L10n Helper: Reload ARB Files` コマンドで ARB ファイルを再読み込み
-
-## VSIXパッケージの作成方法
-
-GitHub リポジトリから独自に編集して VSCode 拡張機能の VSIX パッケージを作成するには、以下の手順に従ってください：
-
-### パッケージ作成手順
-
-リポジトリには以下のスクリプトファイルが用意されています：
-
-- `build_vsix.sh`: 新規にVSIXパッケージを作成するスクリプト
-- `update_vsix.sh`: 既存のVSIXパッケージを更新するスクリプト
-
-#### 新規パッケージの作成
-
-新規にVSIXパッケージを作成するには、以下のコマンドを実行します：
-
-```bash
-./build_vsix.sh
-```
-
-このスクリプトは以下の処理を行います：
-1. 一時ディレクトリ `temp_extract/extension` を作成
-2. 必要なファイルを適切なディレクトリにコピー
-3. VSIXパッケージを作成（`flutter-l10n-helper.vsix`）
-4. 一時ディレクトリを削除
+1. Verify the ARB path is correct (`flutterL10nHelper.arbPath`)
+2. Check that your preferred locale exists in the ARB files
+3. Use the `Flutter L10n Helper: Reload ARB Files` command to reload the ARB files
+4. Confirm you are using Flutter's ARB format files (.arb extension) - this extension does not support other localization formats like .json or .strings files

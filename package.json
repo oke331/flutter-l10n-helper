@@ -1,9 +1,10 @@
 {
   "name": "flutter-l10n-helper",
   "displayName": "Flutter L10n Helper",
-  "description": "Display localized text in code for Flutter ARB files",
-  "version": "0.1.0",
-  "publisher": "oke",
+  "description": "Display localized text in code for Flutter's ARB files (Application Resource Bundle files only)",
+  "version": "0.1.8",
+  "publisher": "oke331",
+  "license": "MIT",
   "engines": {
     "vscode": "^1.60.0"
   },
@@ -13,72 +14,72 @@
   "activationEvents": [
     "onLanguage:dart"
   ],
+  "keywords": [
+    "flutter",
+    "l10n",
+    "arb",
+    "localization",
+    "i18n"
+  ],
   "main": "./l10n_helper.js",
-  "readme": "README.md",
-  "readmeFilename": "README.md",
+  "bugs": {
+    "url": "https://github.com/oke331/flutter-l10n-helper/issues"
+  },
   "repository": {
     "type": "git",
-    "url": ""
+    "url": "https://github.com/oke331/flutter-l10n-helper.git"
   },
   "markdown": "github",
   "qna": "marketplace",
+  "icon": "images/icon.png",
   "contributes": {
     "commands": [
       {
-        "command": "l10nHelper.toggle",
-        "title": "Toggle L10n Helper"
-      },
-      {
-        "command": "l10nHelper.reload",
-        "title": "Reload L10n ARB Files"
+        "command": "flutterL10nHelper.reload",
+        "title": "Reload Flutter L10n ARB Files"
       }
     ],
     "configuration": {
       "title": "Flutter L10n Helper",
       "properties": {
-        "l10nHelper.enabled": {
-          "type": "boolean",
-          "default": true,
-          "description": "Enable or disable the L10n Helper"
-        },
-        "l10nHelper.arbPath": {
+        "flutterL10nHelper.arbPath": {
           "type": "string",
-          "default": "assets/strings",
+          "default": "lib/l10n",
           "description": "Path to the ARB files relative to the workspace root"
         },
-        "l10nHelper.preferredLocale": {
+        "flutterL10nHelper.preferredLocale": {
           "type": "string",
           "default": "ja",
           "description": "Preferred locale to display in the code"
         },
-        "l10nHelper.maxTextLength": {
+        "flutterL10nHelper.maxTextLength": {
           "type": "number",
           "default": 20,
           "description": "Maximum length of displayed text before truncating with ellipsis"
         },
-        "l10nHelper.customPatterns": {
+        "flutterL10nHelper.useDefaultPatterns": {
+          "type": "boolean",
+          "default": true,
+          "description": "Whether to use the default patterns for l10n keys"
+        },
+        "flutterL10nHelper.customPatterns": {
           "type": "array",
           "default": [],
-          "description": "Custom regex patterns to match l10n keys in code. Each pattern should have 'pattern' and 'type' properties.",
+          "description": "Custom regex patterns to match l10n keys in code. Each pattern should have 'pattern' property and optionally 'captureGroup'.",
           "items": {
             "type": "object",
             "properties": {
               "pattern": {
                 "type": "string",
-                "description": "Regex pattern string to match l10n keys. Must include a capture group for the key."
+                "description": "Regex pattern string to match l10n keys. Must include capture groups for the key."
               },
-              "type": {
-                "type": "string",
-                "enum": [
-                  "firstGroup",
-                  "secondGroup"
-                ],
-                "description": "Which capture group contains the l10n key. 'firstGroup' means the first capture group is the key, 'secondGroup' means the second capture group is the key."
+              "captureGroup": {
+                "type": "number",
+                "description": "Which capture group contains the l10n key (1 for first capture group, 2 for second, etc.). Defaults to 1 if not specified."
               }
             },
             "required": [
-              "pattern",
-              "type"
+              "pattern"
             ]
           }
         }

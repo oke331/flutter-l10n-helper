@@ -7,37 +7,124 @@ const path = require("path");
 
 let arbCache = {};
 let timeout = null;
-const DEFAULT_MAX_TEXT_LENGTH = 20; // デフォルトの最大テキスト長
-// 一つの装飾タイプを使い回す
+let arbWatcher = null;
+
+// Default maximum text length
+const DEFAULT_MAX_TEXT_LENGTH = 20;
+
+// Reuse a single decoration type
 let singleDecorationType = null;
 
-// 現在のドキュメントの装飾を保持
-let currentDecorations = [];
+/**
+ * Get default l10n patterns
+ * @returns {Array} Array of default regex patterns
+ */
+function getDefaultL10nPatterns() {
+  return [
+    // AppLocalizations.of(context)?.helloWorld (most common)
+    {
+      pattern: new RegExp(
+        "AppLocalizations\\.of\\(\\s*\\w+\\s*\\)\\?\\.(\\w+)",
+        "g"
+      )
+    },
+    // AppLocalizations.of(context)!.helloWorld
+    {
+      pattern: new RegExp(
+        "AppLocalizations\\.of\\(\\s*\\w+\\s*\\)!\\.(\\w+)",
+        "g"
+      )
+    },
+    // appLocalizations.helloWorld
+    {
+      pattern: new RegExp("appLocalizations\\.(\\w+)", "g")
+    },
+    // context.l10n.hello_world
+    {
+      pattern: new RegExp("context\\.l10n\\.([a-zA-Z0-9_]+)", "g")
+    },
+    // l10n.welcome_message
+    {
+      pattern: new RegExp("(?<!\\w)l10n\\.([a-zA-Z0-9_]+)", "g")
+    },
+    // Text(L10n.of(context)!.cancel_button)
+    {
+      pattern: new RegExp("L10n\\.of\\(\\s*\\w+\\s*\\)!\\.([a-zA-Z0-9_]+)", "g")
+    },
+    // Text(L10n.of(context)?.ok_button)
+    {
+      pattern: new RegExp(
+        "L10n\\.of\\(\\s*\\w+\\s*\\)\\?\\.([a-zA-Z0-9_]+)",
+        "g"
+      )
+    }
+  ];
+}
 
 /**
- * 設定から正規表現パターンを取得する
- * @returns {Array} 正規表現パターンの配列
+ * Get regex patterns from settings
+ * @returns {Array} Array of regex patterns
  */
 function getL10nPatterns() {
-  const config = vscode.workspace.getConfiguration("l10nHelper");
+  const config = vscode.workspace.getConfiguration("flutterL10nHelper");
   const customPatterns = config.get("customPatterns") || [];
+  const useDefaultPatterns = config.get("useDefaultPatterns");
+  const shouldUseDefaultPatterns =
+    useDefaultPatterns === undefined || useDefaultPatterns === null
+      ? true
+      : useDefaultPatterns;
 
-  // カスタムパターンを正規表現オブジェクトに変換
+  // Convert custom patterns to regex objects
   const patterns = [];
 
   try {
+    // Get base patterns
+    const basePatterns = [];
+    if (shouldUseDefaultPatterns) {
+      basePatterns.push(...getDefaultL10nPatterns());
+    }
+
+    // Add both versions of patterns: with and without colons
+    for (const patternObj of basePatterns) {
+      // Add original pattern with default captureGroup (1)
+      patterns.push({
+        pattern: patternObj.pattern,
+        captureGroup: patternObj.captureGroup || 1
+      });
+
+      // Get the source from RegExp object
+      const patternSource = patternObj.pattern.source;
+
+      // Create a version with colon
+      // Example: pattern → (\\w+)\\s*:\\s*pattern
+      const colonPatternSource = "(\\\\w+)\\\\s*:\\\\s*" + patternSource;
+      patterns.push({
+        pattern: new RegExp(colonPatternSource, "g"),
+        captureGroup: (patternObj.captureGroup || 1) + 1 // Shift the capture group by 1
+      });
+    }
+
+    // Add custom patterns
     for (const patternObj of customPatterns) {
-      if (patternObj.pattern && patternObj.type) {
+      if (patternObj.pattern) {
+        // Original custom pattern
         patterns.push({
           pattern: new RegExp(patternObj.pattern, "g"),
-          type: patternObj.type
+          captureGroup: patternObj.captureGroup || 1 // Default to 1 if not specified
+        });
+
+        // Add version with colon
+        const colonPatternSource = "(\\\\w+)\\\\s*:\\\\s*" + patternObj.pattern;
+        patterns.push({
+          pattern: new RegExp(colonPatternSource, "g"),
+          captureGroup: (patternObj.captureGroup || 1) + 1 // Shift the capture group by 1
         });
       }
     }
 
     return patterns;
   } catch (error) {
-    console.error("Error parsing custom patterns:", error);
+    console.error("Error parsing patterns:", error);
     return [];
   }
 }
@@ -47,97 +134,63 @@ function getL10nPatterns() {
  * @param {vscode.ExtensionContext} context
  */
 function activate(context) {
-  console.log("L10n Helper is now active");
+  console.log("Flutter L10n Helper is now active");
+
+  // Get settings
+  const config = vscode.workspace.getConfiguration("flutterL10nHelper");
+  const arbPath = config.get("arbPath") || "lib/l10n";
 
   // Load ARB files on startup
   loadArbFiles();
 
-  // 設定を取得
-  const config = vscode.workspace.getConfiguration("l10nHelper");
-  const arbPath = config.get("arbPath") || "assets/strings";
-
-  // Register commands
-  const toggleCommand = vscode.commands.registerCommand(
-    "l10nHelper.toggle",
-    () => {
-      const config = vscode.workspace.getConfiguration("l10nHelper");
-      const enabled = !config.get("enabled");
-      config.update("enabled", enabled, true);
-
-      vscode.window.showInformationMessage(
-        `L10n Helper: ${enabled ? "Enabled" : "Disabled"}`
-      );
-
-      if (enabled) {
-        updateDecorations();
-      } else {
-        clearDecorations();
-      }
-    }
-  );
-
+  // Register reload command
   const reloadCommand = vscode.commands.registerCommand(
-    "l10nHelper.reload",
+    "flutterL10nHelper.reload",
     () => {
       loadArbFiles();
       updateDecorations();
-      vscode.window.showInformationMessage("L10n Helper: ARB files reloaded");
+      vscode.window.showInformationMessage(
+        "Flutter L10n Helper: ARB files reloaded"
+      );
     }
   );
 
-  // ARBファイルの変更を監視
-  // ワークスペースのARBファイルを監視するパターンを作成
-  const workspaceFolders = vscode.workspace.workspaceFolders;
-  if (workspaceFolders) {
-    const arbGlobPattern = new vscode.RelativePattern(
-      workspaceFolders[0],
-      `${arbPath}/**/*.arb`
-    );
-
-    // ファイル監視を設定
-    const arbWatcher = vscode.workspace.createFileSystemWatcher(arbGlobPattern);
-
-    // ファイルが作成されたとき
-    context.subscriptions.push(
-      arbWatcher.onDidCreate(() => {
-        console.log("ARB file created, reloading...");
-        loadArbFiles();
-        updateDecorations();
-      })
-    );
-
-    // ファイルが変更されたとき
-    context.subscriptions.push(
-      arbWatcher.onDidChange(() => {
-        console.log("ARB file changed, reloading...");
-        loadArbFiles();
-        updateDecorations();
-      })
-    );
-
-    // ファイルが削除されたとき
-    context.subscriptions.push(
-      arbWatcher.onDidDelete(() => {
-        console.log("ARB file deleted, reloading...");
-        loadArbFiles();
-        updateDecorations();
-      })
-    );
-
-    // ウォッチャー自体も登録
-    context.subscriptions.push(arbWatcher);
-  }
+  // Setup ARB file watcher
+  setupArbWatcher(context, arbPath);
 
   // Watch for configuration changes
   context.subscriptions.push(
     vscode.workspace.onDidChangeConfiguration((e) => {
-      if (e.affectsConfiguration("l10nHelper")) {
-        const config = vscode.workspace.getConfiguration("l10nHelper");
-        if (config.get("enabled")) {
-          updateDecorations();
-        } else {
-          clearDecorations();
+      if (e.affectsConfiguration("flutterL10nHelper")) {
+        // Reload ARB files when relevant settings are changed
+        const needsWatcherReset = e.affectsConfiguration(
+          "flutterL10nHelper.arbPath"
+        );
+
+        if (
+          needsWatcherReset ||
+          e.affectsConfiguration("flutterL10nHelper.preferredLocale")
+        ) {
+          loadArbFiles();
         }
+
+        // Reset watcher if arbPath setting is changed
+        if (needsWatcherReset) {
+          const newConfig =
+            vscode.workspace.getConfiguration("flutterL10nHelper");
+          const newArbPath = newConfig.get("arbPath") || "lib/l10n";
+
+          // Clean up the old watcher
+          if (arbWatcher) {
+            arbWatcher.dispose();
+          }
+
+          // Setup new watcher with updated path
+          setupArbWatcher(context, newArbPath);
+        }
+
+        clearDecorations();
+        updateDecorations();
       }
     })
   );
@@ -146,12 +199,9 @@ function activate(context) {
   context.subscriptions.push(
     vscode.window.onDidChangeActiveTextEditor((editor) => {
       if (editor) {
-        const config = vscode.workspace.getConfiguration("l10nHelper");
-        if (config.get("enabled")) {
-          // エディタが変わったら装飾をリセット
-          clearDecorations();
-          updateDecorations();
-        }
+        // Reset decorations when editor changes
+        clearDecorations();
+        updateDecorations();
       }
     })
   );
@@ -161,21 +211,17 @@ function activate(context) {
     vscode.workspace.onDidChangeTextDocument((event) => {
       const activeEditor = vscode.window.activeTextEditor;
       if (activeEditor && event.document === activeEditor.document) {
-        // ドキュメントのバージョンを更新
+        // Update document version
         documentVersion = event.document.version;
-
-        const config = vscode.workspace.getConfiguration("l10nHelper");
-        if (config.get("enabled")) {
-          triggerUpdateDecorations(event.contentChanges);
-        }
+        triggerUpdateDecorations(event.contentChanges);
       }
     })
   );
 
-  // Register the commands
-  context.subscriptions.push(toggleCommand, reloadCommand);
+  // Register the command
+  context.subscriptions.push(reloadCommand);
 
-  // 拡張機能が非アクティブになったときのクリーンアップ
+  // Clean up when extension becomes inactive
   context.subscriptions.push({
     dispose: () => {
       clearDecorations();
@@ -187,9 +233,7 @@ function activate(context) {
   });
 
   // Initial update
-  if (config.get("enabled")) {
-    updateDecorations();
-  }
+  updateDecorations();
 }
 
 /**
@@ -207,17 +251,17 @@ function deactivate() {
  * Load ARB files from the workspace
  */
 function loadArbFiles() {
-  // 既存のキャッシュをクリア
+  // Clear existing cache
   arbCache = {};
-  // 装飾もクリア
+  // Clear decorations
   clearDecorations();
 
   // Find ARB files in the workspace
   const workspaceFolders = vscode.workspace.workspaceFolders;
   if (!workspaceFolders) return;
 
-  const config = vscode.workspace.getConfiguration("l10nHelper");
-  const arbPath = config.get("arbPath") || "assets/strings";
+  const config = vscode.workspace.getConfiguration("flutterL10nHelper");
+  const arbPath = config.get("arbPath") || "lib/l10n";
   const preferredLocale = config.get("preferredLocale") || "ja";
 
   const rootPath = workspaceFolders[0].uri.fsPath;
@@ -261,12 +305,12 @@ function loadArbFiles() {
 }
 
 /**
- * テキストが長い場合に省略する
- * @param {string} text 元のテキスト
- * @returns {string} 省略されたテキスト
+ * Truncate text if it's too long
+ * @param {string} text Original text
+ * @returns {string} Truncated text
  */
 function truncateText(text) {
-  const config = vscode.workspace.getConfiguration("l10nHelper");
+  const config = vscode.workspace.getConfiguration("flutterL10nHelper");
   const maxTextLength = config.get("maxTextLength") || DEFAULT_MAX_TEXT_LENGTH;
 
   if (text.length <= maxTextLength) {
@@ -277,7 +321,7 @@ function truncateText(text) {
 
 /**
  * Trigger an update of decorations with debounce
- * @param {Array} contentChanges 変更された内容
+ * @param {Array} contentChanges Changes in content
  */
 function triggerUpdateDecorations(contentChanges = []) {
   if (timeout) {
@@ -285,7 +329,7 @@ function triggerUpdateDecorations(contentChanges = []) {
     timeout = null;
   }
 
-  // 変更が少ない場合は部分的な更新を行う
+  // Perform partial update if changes are small
   const partialUpdate = contentChanges && contentChanges.length < 3;
 
   timeout = setTimeout(
@@ -296,20 +340,17 @@ function triggerUpdateDecorations(contentChanges = []) {
 
 /**
  * Update decorations in the active editor
- * @param {boolean} partialUpdate 部分的な更新かどうか
- * @param {Array} contentChanges 変更された内容
+ * @param {boolean} partialUpdate Whether this is a partial update
+ * @param {Array} contentChanges Changes in content
  */
 function updateDecorations(partialUpdate = false, contentChanges = []) {
   const activeEditor = vscode.window.activeTextEditor;
   if (!activeEditor) return;
 
-  const config = vscode.workspace.getConfiguration("l10nHelper");
-  if (!config.get("enabled")) return;
-
   // Only process Dart files
   if (activeEditor.document.languageId !== "dart") return;
 
-  // 一つの装飾タイプを作成（なければ）
+  // Create a single decoration type (if it doesn't exist)
   if (!singleDecorationType) {
     singleDecorationType = vscode.window.createTextEditorDecorationType({
       after: {
@@ -322,113 +363,63 @@ function updateDecorations(partialUpdate = false, contentChanges = []) {
   const lineCount = activeEditor.document.lineCount;
   let newDecorations = [];
 
-  // 部分更新の場合は変更された範囲のみを処理、それ以外は全体を処理
-  if (partialUpdate && contentChanges.length > 0) {
-    // 変更された範囲を特定
-    const startLine = Math.max(
-      0,
-      activeEditor.document.positionAt(contentChanges[0].rangeOffset).line - 1
-    );
-    const lastChange = contentChanges[contentChanges.length - 1];
-    const endLine = Math.min(
-      lineCount,
-      activeEditor.document.positionAt(
-        lastChange.rangeOffset + lastChange.rangeLength
-      ).line + 2
-    );
+  // Process everything
+  newDecorations = processLines(activeEditor, 0, lineCount);
 
-    // 変更された範囲外の装飾を保持
-    const unchangedDecorations = currentDecorations.filter(
-      (decoration) =>
-        decoration.range.start.line < startLine ||
-        decoration.range.start.line >= endLine
-    );
-
-    // 変更された範囲の装飾を計算
-    const changedDecorations = processLines(activeEditor, startLine, endLine);
-
-    // 装飾を結合
-    newDecorations = [...unchangedDecorations, ...changedDecorations];
-  } else {
-    // 全体を処理
-    newDecorations = processLines(activeEditor, 0, lineCount);
-  }
-
-  // 装飾を適用
+  // Apply decorations
   if (newDecorations.length > 0) {
     activeEditor.setDecorations(singleDecorationType, newDecorations);
-    // 現在の装飾を更新
+    // Update current decorations
     currentDecorations = newDecorations;
   } else {
-    // 装飾がない場合はクリア
+    // Clear decorations if there are none
     clearDecorations();
     currentDecorations = [];
   }
 }
 
 /**
- * 指定された行範囲を処理して装飾を生成
- * @param {vscode.TextEditor} editor エディタ
- * @param {number} startLine 開始行
- * @param {number} endLine 終了行
- * @returns {Array} 装飾の配列
+ * Process the specified line range and generate decorations
+ * @param {vscode.TextEditor} editor Editor
+ * @param {number} startLine Start line
+ * @param {number} endLine End line
+ * @returns {Array} Array of decorations
  */
 function processLines(editor, startLine, endLine) {
   const decorations = [];
-  // 設定から正規表現パターンを取得
+  // Get regex patterns from settings
   const l10nPatterns = getL10nPatterns();
 
-  // 各行ごとに処理
+  // Process each line
   for (let lineIndex = startLine; lineIndex < endLine; lineIndex++) {
     try {
       const line = editor.document.lineAt(lineIndex);
       const lineText = line.text;
 
-      // 行内のすべてのl10nキーを検出
+      // Detect all l10n keys in the line
       const matches = [];
 
-      // 行内のすべてのマッチを収集
+      // Collect all matches in the line
       for (const patternObj of l10nPatterns) {
         const pattern = patternObj.pattern;
-        const type = patternObj.type;
+        const captureGroup = patternObj.captureGroup;
 
-        // 正規表現のlastIndexをリセット
+        // Reset lastIndex of the regex
         pattern.lastIndex = 0;
 
         let match;
         while ((match = pattern.exec(lineText)) !== null) {
-          if (type === "secondGroup") {
-            // 2番目のキャプチャグループがキー
+          if (match[captureGroup]) {
             matches.push({
-              key: match[2],
+              key: match[captureGroup],
               index: match.index,
-              length: match[0].length,
-              type: type
-            });
-          } else if (
-            pattern.toString().includes("L10n.of") &&
-            type === "firstGroup"
-          ) {
-            // L10n.of形式の場合は2番目のキャプチャグループがキー
-            matches.push({
-              key: match[2],
-              index: match.index,
-              length: match[0].length,
-              type: type
-            });
-          } else {
-            // 通常の形式の場合は1番目のキャプチャグループがキー
-            matches.push({
-              key: match[1],
-              index: match.index,
-              length: match[0].length,
-              type: type
+              length: match[0].length
             });
           }
         }
       }
 
-      // マッチがあれば装飾を追加
+      // Add decorations if there are matches
       if (matches.length > 0) {
         const translatedTexts = [];
 
@@ -438,13 +429,13 @@ function processLines(editor, startLine, endLine) {
           }
         }
 
-        // 重複を削除
+        // Remove duplicates
         const uniqueTexts = [...new Set(translatedTexts)];
 
         if (uniqueTexts.length > 0) {
           const decorationText = uniqueTexts.join(", ");
 
-          // 行の最後に装飾を適用
+          // Apply decoration at the end of the line
           const lineEndPos = new vscode.Position(lineIndex, line.text.length);
           decorations.push({
             range: new vscode.Range(lineEndPos, lineEndPos),
@@ -457,7 +448,7 @@ function processLines(editor, startLine, endLine) {
         }
       }
     } catch (e) {
-      // 行が存在しない場合などのエラーを無視
+      // Ignore errors such as non-existent lines
       console.error(`Error processing line ${lineIndex}: ${e.message}`);
     }
   }
@@ -474,6 +465,54 @@ function clearDecorations() {
 
   activeEditor.setDecorations(singleDecorationType, []);
   currentDecorations = [];
+}
+
+/**
+ * Set up watcher for ARB files
+ * @param {vscode.ExtensionContext} context Extension context
+ * @param {string} arbPath Path to ARB files
+ */
+function setupArbWatcher(context, arbPath) {
+  const workspaceFolders = vscode.workspace.workspaceFolders;
+  if (!workspaceFolders) return;
+
+  const arbGlobPattern = new vscode.RelativePattern(
+    workspaceFolders[0],
+    `${arbPath}/**/*.arb`
+  );
+
+  // Set up file watching
+  arbWatcher = vscode.workspace.createFileSystemWatcher(arbGlobPattern);
+
+  // When a file is created
+  context.subscriptions.push(
+    arbWatcher.onDidCreate(() => {
+      console.log("ARB file created, reloading...");
+      loadArbFiles();
+      updateDecorations();
+    })
+  );
+
+  // When a file is changed
+  context.subscriptions.push(
+    arbWatcher.onDidChange(() => {
+      console.log("ARB file changed, reloading...");
+      loadArbFiles();
+      updateDecorations();
+    })
+  );
+
+  // When a file is deleted
+  context.subscriptions.push(
+    arbWatcher.onDidDelete(() => {
+      console.log("ARB file deleted, reloading...");
+      loadArbFiles();
+      updateDecorations();
+    })
+  );
+
+  // Register the watcher itself
+  context.subscriptions.push(arbWatcher);
 }
 
 module.exports = {
