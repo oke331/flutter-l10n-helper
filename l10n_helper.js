@@ -21,19 +21,13 @@ let singleDecorationType = null;
  */
 function getDefaultL10nPatterns() {
   return [
-    // AppLocalizations.of(context)?.helloWorld (most common)
+    // AppLocalizations.of(context)[?!]?.helloWorld (combines all three patterns)
     {
       pattern: new RegExp(
-        "AppLocalizations\\.of\\(\\s*\\w+\\s*\\)\\?\\.(\\w+)",
+        "AppLocalizations\\.of\\(\\s*\\w+\\s*\\)([?!])?\\.(\\w+)",
         "g"
-      )
-    },
-    // AppLocalizations.of(context)!.helloWorld
-    {
-      pattern: new RegExp(
-        "AppLocalizations\\.of\\(\\s*\\w+\\s*\\)!\\.(\\w+)",
-        "g"
-      )
+      ),
+      captureGroup: 2
     },
     // appLocalizations.helloWorld
     {
@@ -47,16 +41,10 @@ function getDefaultL10nPatterns() {
     {
       pattern: new RegExp("(?<!\\w)l10n\\.([a-zA-Z0-9_]+)", "g")
     },
-    // Text(L10n.of(context)!.cancel_button)
+    // L10n.of(context)[?!]?.cancel_button (combines all three L10n patterns)
     {
-      pattern: new RegExp("L10n\\.of\\(\\s*\\w+\\s*\\)!\\.([a-zA-Z0-9_]+)", "g")
-    },
-    // Text(L10n.of(context)?.ok_button)
-    {
-      pattern: new RegExp(
-        "L10n\\.of\\(\\s*\\w+\\s*\\)\\?\\.([a-zA-Z0-9_]+)",
-        "g"
-      )
+      pattern: new RegExp("L10n\\.of\\(\\s*\\w+\\s*\\)([?!])?\\.(\\w+)", "g"),
+      captureGroup: 2
     }
   ];
 }

@@ -71,33 +71,29 @@ For complete customization, you can use the full configuration:
 The extension includes the following default patterns when `useDefaultPatterns` is enabled (default):
 
 ```javascript
-// 1. AppLocalizations.of(context)?.helloWorld (most common pattern)
-{ "pattern": "AppLocalizations\\.of\\(\\s*\\w+\\s*\\)\\?\\.(\\w+)" }
+// 1. AppLocalizations.of(context).helloWorld
+{ "pattern": "AppLocalizations\\.of\\(\\s*\\w+\\s*\\)([?!])?\\.(\\w+)", "captureGroup": 2 }
 // Example: Text(AppLocalizations.of(context)?.welcome_message) // Displays: Welcome to our app
-
-// 2. AppLocalizations.of(context)!.helloWorld
-{ "pattern": "AppLocalizations\\.of\\(\\s*\\w+\\s*\\)!\\.(\\w+)" }
 // Example: Text(AppLocalizations.of(context)!.header_title) // Displays: Dashboard
+// Example: Text(AppLocalizations.of(context).welcome_message) // Displays: Welcome to our app
 
-// 3. appLocalizations.helloWorld
+// 2. appLocalizations.helloWorld
 { "pattern": "appLocalizations\\.(\\w+)" }
 // Example: Text(appLocalizations.submit_button) // Displays: Submit
 
-// 4. context.l10n.hello_world
+// 3. context.l10n.hello_world
 { "pattern": "context\\.l10n\\.([a-zA-Z0-9_]+)" }
 // Example: Text(context.l10n.cancel_action) // Displays: Cancel
 
-// 5. l10n.welcome_message
+// 4. l10n.welcome_message
 { "pattern": "(?<!\\w)l10n\\.([a-zA-Z0-9_]+)" }
 // Example: Text(l10n.welcome_message) // Displays: Welcome to our app
 
-// 6. L10n.of(context)!.cancel_button
-{ "pattern": "L10n\\.of\\(\\s*\\w+\\s*\\)!\\.([a-zA-Z0-9_]+)" }
+// 5. L10n.of(context).cancel_button
+{ "pattern": "L10n\\.of\\(\\s*\\w+\\s*\\)([?!])?\\.(\\w+)", "captureGroup": 2 }
 // Example: Text(L10n.of(context)!.cancel_button) // Displays: Cancel
-
-// 7. L10n.of(context)?.ok_button
-{ "pattern": "L10n\\.of\\(\\s*\\w+\\s*\\)\\?\\.([a-zA-Z0-9_]+)" }
 // Example: Text(L10n.of(context)?.ok_button) // Displays: OK
+// Example: Text(L10n.of(context).ok_button) // Displays: OK
 ```
 
 These patterns have the global flag enabled and use properly escaped regular expressions in the actual implementation.
