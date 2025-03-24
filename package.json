@@ -2,7 +2,7 @@
   "name": "flutter-l10n-helper",
   "displayName": "Flutter L10n Helper",
   "description": "Display localized text in code for Flutter's ARB files (Application Resource Bundle files only)",
-  "version": "0.1.9",
+  "version": "0.1.10",
   "publisher": "oke331",
   "license": "MIT",
   "engines": {

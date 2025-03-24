@@ -21,29 +21,32 @@ let singleDecorationType = null;
  */
 function getDefaultL10nPatterns() {
   return [
-    // AppLocalizations.of(context)[?!]?.helloWorld (combines all three patterns)
+    // AppLocalizations.of(context).helloWorld (combines all three patterns)
     {
       pattern: new RegExp(
         "AppLocalizations\\.of\\(\\s*\\w+\\s*\\)([?!])?\\.(\\w+)",
-        "g"
+        "gms"
       ),
       captureGroup: 2
     },
     // appLocalizations.helloWorld
     {
-      pattern: new RegExp("appLocalizations\\.(\\w+)", "g")
+      pattern: new RegExp("appLocalizations\\.(\\w+)", "gms")
     },
-    // context.l10n.hello_world
+    // context.l10n.method
     {
-      pattern: new RegExp("context\\.l10n\\.([a-zA-Z0-9_]+)", "g")
+      pattern: new RegExp(
+        "context\\s*\\.\\s*l10n\\s*\\.\\s*([a-zA-Z0-9_]+)",
+        "gms"
+      )
     },
     // l10n.welcome_message
     {
-      pattern: new RegExp("(?<!\\w)l10n\\.([a-zA-Z0-9_]+)", "g")
+      pattern: new RegExp("(?<!\\w)l10n\\.([a-zA-Z0-9_]+)", "gms")
     },
-    // L10n.of(context)[?!]?.cancel_button (combines all three L10n patterns)
+    // L10n.of(context).cancel_button (combines all three patterns)
     {
-      pattern: new RegExp("L10n\\.of\\(\\s*\\w+\\s*\\)([?!])?\\.(\\w+)", "g"),
+      pattern: new RegExp("L10n\\.of\\(\\s*\\w+\\s*\\)([?!])?\\.(\\w+)", "gms"),
       captureGroup: 2
     }
   ];
@@ -74,7 +77,7 @@ function getL10nPatterns() {
 
     // Add both versions of patterns: with and without colons
     for (const patternObj of basePatterns) {
-      // Add original pattern with default captureGroup (1)
+      // Add original pattern with default captureGroup
       patterns.push({
         pattern: patternObj.pattern,
         captureGroup: patternObj.captureGroup || 1
@@ -87,7 +90,7 @@ function getL10nPatterns() {
       // Example: pattern → (\\w+)\\s*:\\s*pattern
       const colonPatternSource = "(\\\\w+)\\\\s*:\\\\s*" + patternSource;
       patterns.push({
-        pattern: new RegExp(colonPatternSource, "g"),
+        pattern: new RegExp(colonPatternSource, "gms"),
         captureGroup: (patternObj.captureGroup || 1) + 1 // Shift the capture group by 1
       });
     }
@@ -97,14 +100,14 @@ function getL10nPatterns() {
       if (patternObj.pattern) {
         // Original custom pattern
         patterns.push({
-          pattern: new RegExp(patternObj.pattern, "g"),
+          pattern: new RegExp(patternObj.pattern, "gms"), // Always use gms flags
           captureGroup: patternObj.captureGroup || 1 // Default to 1 if not specified
         });
 
         // Add version with colon
         const colonPatternSource = "(\\\\w+)\\\\s*:\\\\s*" + patternObj.pattern;
         patterns.push({
-          pattern: new RegExp(colonPatternSource, "g"),
+          pattern: new RegExp(colonPatternSource, "gms"), // Always use gms flags
           captureGroup: (patternObj.captureGroup || 1) + 1 // Shift the capture group by 1
         });
       }
@@ -378,70 +381,82 @@ function processLines(editor, startLine, endLine) {
   // Get regex patterns from settings
   const l10nPatterns = getL10nPatterns();
 
-  // Process each line
-  for (let lineIndex = startLine; lineIndex < endLine; lineIndex++) {
+  // Full document approach
+  const document = editor.document;
+  const fullText = document.getText();
+
+  // For each pattern
+  for (const patternObj of l10nPatterns) {
     try {
-      const line = editor.document.lineAt(lineIndex);
-      const lineText = line.text;
+      const pattern = patternObj.pattern;
+      const captureGroup = patternObj.captureGroup || 1;
 
-      // Detect all l10n keys in the line
-      const matches = [];
+      // Reset the lastIndex
+      pattern.lastIndex = 0;
 
-      // Collect all matches in the line
-      for (const patternObj of l10nPatterns) {
-        const pattern = patternObj.pattern;
-        const captureGroup = patternObj.captureGroup;
+      let match;
+      while ((match = pattern.exec(fullText)) !== null) {
+        // Get the specific key
+        const key = match[captureGroup];
 
-        // Reset lastIndex of the regex
-        pattern.lastIndex = 0;
-
-        let match;
-        while ((match = pattern.exec(lineText)) !== null) {
-          if (match[captureGroup]) {
-            matches.push({
-              key: match[captureGroup],
-              index: match.index,
-              length: match[0].length
-            });
-          }
-        }
-      }
-
-      // Add decorations if there are matches
-      if (matches.length > 0) {
-        const translatedTexts = [];
-
-        for (const match of matches) {
-          if (arbCache[match.key]) {
-            translatedTexts.push(truncateText(arbCache[match.key]));
-          }
+        if (!key || !arbCache[key]) {
+          continue;
         }
 
-        // Remove duplicates
-        const uniqueTexts = [...new Set(translatedTexts)];
+        // Get the position of the match
+        const matchEnd = match.index + match[0].length;
 
-        if (uniqueTexts.length > 0) {
-          const decorationText = uniqueTexts.join(", ");
+        // Find the line that contains this match
+        const endPos = document.positionAt(matchEnd);
 
-          // Apply decoration at the end of the line
-          const lineEndPos = new vscode.Position(lineIndex, line.text.length);
-          decorations.push({
-            range: new vscode.Range(lineEndPos, lineEndPos),
-            renderOptions: {
-              after: {
-                contentText: ` ${decorationText}`
-              }
+        const line = document.lineAt(endPos.line);
+        const translatedText = truncateText(arbCache[key]);
+
+        console.log(
+          `Found match for key "${key}" at line ${
+            endPos.line + 1
+          }: ${translatedText}`
+        );
+
+        // Apply decoration at the end of the line containing the match end
+        const lineEndPos = new vscode.Position(endPos.line, line.text.length);
+        decorations.push({
+          range: new vscode.Range(lineEndPos, lineEndPos),
+          renderOptions: {
+            after: {
+              contentText: ` ${translatedText}`
             }
-          });
-        }
+          }
+        });
       }
     } catch (e) {
-      // Ignore errors such as non-existent lines
-      console.error(`Error processing line ${lineIndex}: ${e.message}`);
+      console.error(`Error with pattern ${patternObj.pattern}: ${e.message}`);
     }
   }
 
-  return decorations;
+  // Remove duplicates at the same position by merging them
+  const uniqueDecorations = [];
+  const decorationMap = new Map();
+
+  for (const decoration of decorations) {
+    const posKey = `${decoration.range.start.line},${decoration.range.start.character}`;
+
+    if (!decorationMap.has(posKey)) {
+      decorationMap.set(posKey, decoration);
+      uniqueDecorations.push(decoration);
+    } else {
+      // Merge text
+      const existing = decorationMap.get(posKey);
+      const existingText = existing.renderOptions.after.contentText.trim();
+      const newText = decoration.renderOptions.after.contentText.trim();
+
+      if (!existingText.includes(newText)) {
+        existing.renderOptions.after.contentText = ` ${existingText}, ${newText}`;
+      }
+    }
+  }
+
+  return uniqueDecorations;
 }
 
 /**
